@@ -104,6 +104,7 @@ namespace Mono.TextEditor.Vi
 		static string lastPattern;
 		static string lastReplacement;
 		State curState;
+		int repeatCount;
 		State CurState {
 			get {
 				return curState;
@@ -334,7 +335,6 @@ namespace Mono.TextEditor.Vi
 
 		protected override void HandleKeypress (Gdk.Key key, uint unicodeKey, Gdk.ModifierType modifier)
 		{
-		
 			// Reset on Esc, Ctrl-C, Ctrl-[
 			if (key == Gdk.Key.Escape) {
 				if (currentMacro != null) {
@@ -365,15 +365,40 @@ namespace Mono.TextEditor.Vi
 			
 			Action<TextEditorData> action = null;
 			bool lineAction = false;
-			
+			int repeatDigit = -1;
+			if (key.ToString ().StartsWith ("Key_")) {
+				var keyString = key.ToString ().Substring (4);
+				if(!int.TryParse (key.ToString().Substring(4), out repeatDigit)) {
+					repeatDigit = -1;
+				}
+			}
+
 			switch (CurState) {
 			case State.Unknown:
 				Reset (string.Empty);
 				goto case State.Normal;
+			case State.RepeatCount:
+				if (repeatDigit != -1) {
+					repeatCount = 10 * repeatCount + repeatDigit;
+					return;
+				} else {
+					CurState = State.Normal;
+					while (--repeatCount >= 0) {
+						HandleKeypress (key, unicodeKey, modifier);
+					}
+				}
+				return;
 			case State.Normal:
 				if (((modifier & (Gdk.ModifierType.ControlMask)) == 0)) {
 					if (key == Gdk.Key.Delete)
 						unicodeKey = 'x';
+
+					if(repeatDigit != -1) {
+						repeatCount = repeatDigit;
+						CurState = State.RepeatCount;
+						return;
+					}
+
 					switch ((char)unicodeKey) {
 					case '?':
 					case '/':
@@ -1206,7 +1231,8 @@ namespace Mono.TextEditor.Vi
 			Mark,
 			GoToMark,
 			NameMacro,
-			PlayMacro
+			PlayMacro,
+			RepeatCount
 		}
 
 		public override void AllocateTextArea (TextEditor textEditor, TextArea textArea, Gdk.Rectangle allocation)
